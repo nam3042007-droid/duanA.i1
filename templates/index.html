@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKB TACI - Hệ Thống Gọi Xe Thông Minh</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --success: #34a853;
+            --danger: #ea4335;
+            --bg: #f8f9fa;
+        }
+
+        body { font-family: 'Lexend', sans-serif; margin: 0; display: flex; height: 100vh; background-color: var(--bg); }
+        #sidebar { width: 400px; background: white; box-shadow: 4px 0 15px rgba(0,0,0,0.1); z-index: 1000; display: flex; flex-direction: column; padding: 25px; overflow-y: auto; }
+        h2 { color: var(--primary); margin-top: 0; display: flex; align-items: center; gap: 10px; }
+        
+        .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; margin-bottom: 15px; transition: 0.3s; }
+        .card:hover { border-color: var(--primary); }
+        label { font-size: 0.85rem; font-weight: 600; color: #5f6368; display: block; margin-bottom: 5px; }
+        
+        input, select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 14px; outline: none; }
+        input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(26,115,232,0.2); }
+
+        .btn { border: none; padding: 14px; border-radius: 8px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 10px; transition: 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-gps { background: var(--success); color: white; margin-bottom: 10px; }
+        .btn-calc { background: var(--primary); color: white; font-size: 16px; margin-top: 20px; }
+        .btn-search { background: #f1f3f4; color: #3c4043; font-size: 12px; padding: 8px; }
+        .btn:hover { filter: brightness(90%); }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+
+        #bill { display: none; margin-top: 25px; padding: 20px; border-radius: 12px; background: #fdfdfd; border: 2px solid var(--primary); animation: slideUp 0.4s ease; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        .bill-title { font-weight: 600; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .bill-item { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; color: #555; }
+        .total-row { border-top: 2px solid #eee; padding-top: 15px; margin-top: 10px; font-weight: bold; font-size: 20px; color: var(--danger); }
+        #map { flex-grow: 1; }
+        .loader { display: none; text-align: center; margin-top: 15px; color: var(--primary); font-weight: bold; }
+
+        /* Chatbot Styling */
+        #chatbot {
+            position: fixed; bottom: 20px; right: 20px; width: 320px;
+            background: white; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.2);
+            display: none; flex-direction: column; z-index: 2000; overflow: hidden;
+            animation: slideUp 0.4s ease; border: 1px solid #ddd;
+        }
+        .chat-header { background: #34a853; color: white; padding: 12px 15px; font-weight: bold; font-size: 15px; display: flex; justify-content: space-between; }
+        .chat-body { height: 220px; padding: 15px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 10px 14px; border-radius: 18px; font-size: 13px; max-width: 80%; line-height: 1.4; }
+        .msg.bot { background: #e9ecef; color: #333; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .msg.user { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .chat-input { display: flex; border-top: 1px solid #ddd; background: #fff; }
+        .chat-input input { border: none; padding: 12px; flex-grow: 1; outline: none; border-radius:0; font-size: 13px; }
+        .chat-input button { border: none; background: transparent; padding: 0 15px; cursor: pointer; font-weight: bold; color: var(--primary); }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>🚖 SKB TACI</h2>
+    
+    <div class="card">
+        <label>📍 ĐIỂM ĐÓN (PICK-UP)</label>
+        <button class="btn btn-gps" onclick="getLocation()">📍 Lấy vị trí hiện tại</button>
+        <input type="text" id="startAddr" placeholder="Nhập tên đường, tòa nhà..." autocomplete="off">
+        <button class="btn btn-search" onclick="geocode('start')">Xác nhận điểm đón (Enter)</button>
+    </div>
+
+    <div class="card">
+        <label>🏁 ĐIỂM ĐẾN (DESTINATION)</label>
+        <input type="text" id="endAddr" placeholder="Bạn muốn đi đâu?" autocomplete="off">
+        <button class="btn btn-search" onclick="geocode('end')">Xác nhận điểm đến (Enter)</button>
+    </div>
+
+    <div class="card">
+        <label>🚗 LOẠI PHƯƠNG TIỆN</label>
+        <select id="vehicle">
+            <option value="1.0">🛵 Xe máy (Tiết kiệm)</option>
+            <option value="1.5" selected>🚗 Taxi 4 chỗ (Phổ thông)</option>
+            <option value="2.0">🚐 Taxi 7 chỗ (Gia đình)</option>
+        </select>
+    </div>
+
+    <div class="card">
+        <label>✨ TÙY CHỌN "GU" CUỐC XE</label>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">
+            <label style="font-weight:normal; font-size:14px; cursor:pointer;"><input type="checkbox" id="pref-quiet"> 🤫 Chuyến đi yên tĩnh</label>
+            <label style="font-weight:normal; font-size:14px; cursor:pointer;"><input type="checkbox" id="pref-ac"> ❄️ Bật máy lạnh sâu</label>
+            <label style="font-weight:normal; font-size:14px; cursor:pointer;"><input type="checkbox" id="pref-music"> 🎵 Mở nhạc Chill</label>
+        </div>
+    </div>
+
+    <button class="btn btn-calc" id="calcBtn" onclick="calculate()">TÌM ĐƯỜNG & TÍNH CƯỚC</button>
+    <div id="loader" class="loader">🔄 Đang phân tích lộ trình thực tế...</div>
+
+    <div id="bill" class="bill">
+        <div class="bill-title">CHI TIẾT THANH TOÁN</div>
+        <div class="bill-item"><span>Quãng đường:</span><span id="b-dist">--</span></div>
+        <div class="bill-item"><span>Cước cơ bản:</span><span id="b-base">--</span></div>
+        <div class="bill-item"><span>⚡ Phụ phí cao điểm:</span><span id="b-peak">--</span></div>
+        <div class="bill-item"><span>🌧️ Phụ phí thời tiết:</span><span id="b-weather">--</span></div>
+        <div class="bill-item" id="row-discount" style="display:none;"><span>🎉 Mã giảm giá (<span id="b-code"></span>):</span><span id="b-discount" style="color: var(--success); font-weight: bold;">--</span></div>
+        <div class="total-row"><span>TỔNG CỘNG:</span><span id="b-total">0 VNĐ</span></div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<div id="chatbot">
+    <div class="chat-header"><span>🚘 Tài xế AI</span> <span style="font-size:11px; font-weight:normal;">🟢 Đang tới</span></div>
+    <div class="chat-body" id="chat-body"></div>
+    <div class="chat-input">
+        <input type="text" id="chat-msg" placeholder="Nhắn cho tài xế..." onkeypress="if(event.key==='Enter') sendMessage()">
+        <button onclick="sendMessage()">Gửi</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    var map = L.map('map').setView([16.0470, 108.2062], 6); // Toàn VN
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    var startMarker, endMarker, routePolyline;
+    var s_coords = null, e_coords = null;
+
+    function getLocation() {
+        if (!navigator.geolocation) return alert("Trình duyệt không hỗ trợ định vị.");
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+            const { latitude, longitude } = pos.coords;
+            s_coords = {lat: latitude, lon: longitude};
+            updateMarker('start', latitude, longitude, "Bạn đang ở đây");
+            map.setView([latitude, longitude], 16);
+            try {
+                const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+                const data = await resp.json();
+                document.getElementById('startAddr').value = data.display_name.split(',')[0] + ", " + data.display_name.split(',')[1];
+            } catch (e) { console.error(e); }
+        }, () => alert("Vui lòng cấp quyền truy cập vị trí để sử dụng tính năng này."));
+    }
+
+    async function geocode(type) {
+        const inputId = (type === 'start') ? 'startAddr' : 'endAddr';
+        const addr = document.getElementById(inputId).value;
+        if (!addr) return;
+        const query = addr.includes("Việt Nam") ? addr : addr + ", Việt Nam";
+        try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+            const data = await resp.json();
+            if (data.length > 0) {
+                const lat = parseFloat(data[0].lat), lon = parseFloat(data[0].lon);
+                if (type === 'start') s_coords = {lat, lon}; else e_coords = {lat, lon};
+                updateMarker(type, lat, lon, (type === 'start' ? "Điểm đón" : "Điểm đến"));
+                map.setView([lat, lon], 15);
+            } else {
+                alert("Không tìm thấy địa chỉ này!");
+            }
+        } catch (e) { alert("Lỗi kết nối bản đồ!"); }
+    }
+
+    function updateMarker(type, lat, lon, label) {
+        if (type === 'start') {
+            if (startMarker) map.removeLayer(startMarker);
+            startMarker = L.marker([lat, lon]).addTo(map).bindPopup(label).openPopup();
+        } else {
+            if (endMarker) map.removeLayer(endMarker);
+            const redIcon = L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                iconSize: [25, 41], iconAnchor: [12, 41]
+            });
+            endMarker = L.marker([lat, lon], {icon: redIcon}).addTo(map).bindPopup(label).openPopup();
+        }
+    }
+
+    ['startAddr', 'endAddr'].forEach(id => {
+        document.getElementById(id).addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') geocode(id === 'startAddr' ? 'start' : 'end');
+        });
+    });
+
+    async function calculate() {
+        if (!s_coords || !e_coords) return alert("Vui lòng xác nhận cả Điểm đón và Điểm đến!");
+        const btn = document.getElementById('calcBtn');
+        const loader = document.getElementById('loader');
+        const bill = document.getElementById('bill');
+
+        btn.disabled = true; loader.style.display = "block"; bill.style.display = "none";
+
+        try {
+            const resp = await fetch('/calculate_fare', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    s_lat: s_coords.lat, s_lon: s_coords.lon,
+                    e_lat: e_coords.lat, e_lon: e_coords.lon,
+                    he_so: document.getElementById('vehicle').value
+                })
+            });
+            const res = await resp.json();
+            if (res.error) throw new Error(res.error);
+
+            if (routePolyline) map.removeLayer(routePolyline);
+            routePolyline = L.polyline(res.path, { color: '#1a73e8', weight: 6, opacity: 0.8, lineJoin: 'round' }).addTo(map);
+            map.fitBounds(routePolyline.getBounds(), {padding: [50, 50]});
+
+            // In Hóa đơn
+            document.getElementById('b-dist').innerText = res.dist + " km";
+            document.getElementById('b-base').innerText = res.breakdown.base.toLocaleString() + "đ";
+            document.getElementById('b-peak').innerText = res.breakdown.peak > 0 ? `+ ${res.breakdown.peak.toLocaleString()}đ` : "0đ";
+            document.getElementById('b-peak').style.color = res.breakdown.peak > 0 ? "var(--danger)" : "#555";
+            document.getElementById('b-weather').innerText = res.breakdown.weather > 0 ? `+ ${res.breakdown.weather.toLocaleString()}đ` : "0đ";
+            document.getElementById('b-weather').style.color = res.breakdown.weather > 0 ? "var(--danger)" : "#555";
+
+            // KIỂM TRA BẬT POPUP AI TẶNG MÃ
+            if (res.breakdown.discount > 0) {
+                document.getElementById('row-discount').style.display = "flex";
+                document.getElementById('b-code').innerText = res.breakdown.discount_code;
+                document.getElementById('b-discount').innerText = `- ${res.breakdown.discount.toLocaleString()}đ`;
+                setTimeout(() => { alert(`🌧️ AI Nhận diện trời đang mưa/ẩm!\nTự động tặng bạn mã ${res.breakdown.discount_code} giảm ${res.breakdown.discount.toLocaleString()}đ!`); }, 500);
+            } else {
+                document.getElementById('row-discount').style.display = "none";
+            }
+
+            document.getElementById('b-total').innerText = res.breakdown.total.toLocaleString() + " VNĐ";
+            bill.style.display = "block";
+
+            // KÍCH HOẠT CHATBOT
+            document.getElementById('chatbot').style.display = "flex";
+            document.getElementById('chat-body').innerHTML = "";
+            let prefs = [];
+            if(document.getElementById('pref-quiet').checked) prefs.push("giữ yên tĩnh");
+            if(document.getElementById('pref-ac').checked) prefs.push("bật máy lạnh sâu");
+            if(document.getElementById('pref-music').checked) prefs.push("mở sẵn nhạc Chill");
+            
+            let botGreeting = `Chào bạn, mình đã nhận cuốc và đang chạy tới điểm đón!`;
+            if (prefs.length > 0) botGreeting = `Chào bạn, mình đang tới. Mình đã chuẩn bị xe ${prefs.join(", ")} theo ý bạn rồi nhé!`;
+            setTimeout(() => addMsg('bot', botGreeting), 1500);
+
+        } catch (err) { alert("Lỗi: " + err.message); } 
+        finally { btn.disabled = false; loader.style.display = "none"; }
+    }
+
+    function addMsg(sender, text) {
+        const div = document.createElement('div');
+        div.className = `msg ${sender}`; div.innerText = text;
+        const body = document.getElementById('chat-body');
+        body.appendChild(div); body.scrollTop = body.scrollHeight;
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('chat-msg');
+        const text = input.value.trim();
+        if(!text) return;
+        addMsg('user', text); input.value = "";
+        
+        setTimeout(() => {
+            const lower = text.toLowerCase();
+            let reply = "Dạ vâng, em đang cố gắng chạy qua nhanh nhất có thể!";
+            if (lower.includes("đâu rồi") || lower.includes("lâu") || lower.includes("đến chưa")) reply = "Đường đang hơi đông, em cách chỗ khách tầm 3 phút nữa thôi ạ!";
+            else if (lower.includes("nhanh")) reply = "Em đang chạy hết tốc độ cho phép rồi ạ, khách đợi em xíu nha!";
+            else if (lower.includes("ok") || lower.includes("cám ơn")) reply = "Dạ, chúc khách một ngày vui vẻ ạ!";
+            addMsg('bot', reply);
+        }, 1200 + Math.random() * 1000);
+    }
+</script>
+</body>
+</html>
+
