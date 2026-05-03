@@ -3,3 +3,4 @@ numpy
 scikit-fuzzy
 requests
 gunicorn
+scipy
