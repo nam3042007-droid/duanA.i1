@@ -1,6 +1,10 @@
 Flask
 numpy
+scipy
 scikit-fuzzy
 requests
+networkx
+pandas
+matplotlib
 gunicorn
-scipy
+osmnx
